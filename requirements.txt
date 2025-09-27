@@ -1,0 +1,24 @@
+# Core video processing
+opencv-python
+Pillow
+moviepy
+numpy
+
+# YouTube API
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+google-auth
+# Scheduling and timezone
+schedule
+pytz
+
+# AI integration (if using Meta AI)
+# Add your Meta AI API package here
+# meta-ai-api  # Uncomment if you have this package
+
+# Logging and utilities
+python-dateutil
+
+# Optional: For better performance
+# ffmpeg-python==0.2.0  # Uncomment if you want programmatic ffmpeg control
