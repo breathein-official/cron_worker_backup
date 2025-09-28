@@ -24,7 +24,7 @@ logging.basicConfig(
 class YouTubeScheduler:
     def __init__(self):
         self.ist = pytz.timezone('Asia/Kolkata')
-        self.upload_times = ['07:30', '13:48', '19:00']  # 7:30 AM, 12 PM, 7:00 PM IST
+        self.upload_times = ['07:30', '14:03', '19:00']  # 7:30 AM, 12 PM, 7:00 PM IST
         self.is_running = False
         self.scheduler_thread = None
         self.csv_log_file = 'exitLog.csv'
