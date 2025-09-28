@@ -9,6 +9,7 @@ import hashlib
 from exit import upload_video
 from app import generate_video
 import logging
+import json
 
 # Configure logging
 logging.basicConfig(
@@ -23,11 +24,88 @@ logging.basicConfig(
 class YouTubeScheduler:
     def __init__(self):
         self.ist = pytz.timezone('Asia/Kolkata')
-        self.upload_times = ['07:30', '12:00', '19:00']  # 7:30 AM, 12 PM, 7:00 PM IST
+        self.upload_times = ['07:30', '12:29', '19:00']  # 7:30 AM, 12 PM, 7:00 PM IST
         self.is_running = False
         self.scheduler_thread = None
         self.csv_log_file = 'exitLog.csv'
+        self.upload_lock = threading.Lock()  # Prevent concurrent uploads
+        self.upload_tracker_file = 'upload_tracker.json'  # Track completed uploads
+        self._initialize_upload_tracker()
         self._initialize_csv_log()
+    
+    def _initialize_upload_tracker(self):
+        """Initialize upload tracker to prevent duplicate uploads"""
+        if not os.path.exists(self.upload_tracker_file):
+            tracker_data = {
+                "completed_uploads": {},
+                "last_cleanup": None
+            }
+            with open(self.upload_tracker_file, 'w') as f:
+                json.dump(tracker_data, f, indent=2)
+            logging.info(f"Initialized upload tracker: {self.upload_tracker_file}")
+    
+    def _load_upload_tracker(self):
+        """Load upload tracker data"""
+        try:
+            with open(self.upload_tracker_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Error loading upload tracker: {e}")
+            return {"completed_uploads": {}, "last_cleanup": None}
+    
+    def _save_upload_tracker(self, tracker_data):
+        """Save upload tracker data"""
+        try:
+            with open(self.upload_tracker_file, 'w') as f:
+                json.dump(tracker_data, f, indent=2)
+        except Exception as e:
+            logging.error(f"Error saving upload tracker: {e}")
+    
+    def _is_upload_completed_today(self, upload_time):
+        """Check if upload for this time slot was already completed today"""
+        tracker_data = self._load_upload_tracker()
+        today = self.get_current_ist_time().date().isoformat()
+        
+        # Clean up old entries (older than 7 days)
+        self._cleanup_old_entries(tracker_data)
+        
+        upload_key = f"{today}_{upload_time}"
+        return upload_key in tracker_data.get("completed_uploads", {})
+    
+    def _mark_upload_completed(self, upload_time):
+        """Mark upload as completed for today"""
+        tracker_data = self._load_upload_tracker()
+        today = self.get_current_ist_time().date().isoformat()
+        upload_key = f"{today}_{upload_time}"
+        
+        tracker_data["completed_uploads"][upload_key] = {
+            "timestamp": self.get_current_ist_time().isoformat(),
+            "upload_time": upload_time
+        }
+        
+        self._save_upload_tracker(tracker_data)
+        logging.info(f"Marked upload as completed: {upload_key}")
+    
+    def _cleanup_old_entries(self, tracker_data):
+        """Clean up upload tracker entries older than 7 days"""
+        today = self.get_current_ist_time().date()
+        cutoff_date = today - timedelta(days=7)
+        
+        # Clean up old entries
+        old_keys = []
+        for key, data in tracker_data.get("completed_uploads", {}).items():
+            try:
+                entry_date = datetime.fromisoformat(data["timestamp"]).date()
+                if entry_date < cutoff_date:
+                    old_keys.append(key)
+            except:
+                old_keys.append(key)  # Remove malformed entries
+        
+        for key in old_keys:
+            del tracker_data["completed_uploads"][key]
+        
+        if old_keys:
+            logging.info(f"Cleaned up {len(old_keys)} old upload tracker entries")
         
     def _initialize_csv_log(self):
         """Initialize CSV log file with headers if it doesn't exist"""
@@ -190,7 +268,7 @@ class YouTubeScheduler:
     
     def create_video_description(self, upload_time):
         """Generate dynamic video description"""
-        base_hashtags = "#BlockScroll #Productivity #DigitalDetox #Motivation #SelfImprovement #Focus #Success #Mindfulness #BreakTheScroll #shorts #trending #viral #business #creator #youtuber #youtubeshorts"
+        base_hashtags = "#Breathe-In #Productivity #DigitalDetox #Motivation #SelfImprovement #Focus #Success #Mindfulness #BreakTheScroll #shorts #trending #viral #business #creator #youtuber #youtubeshorts"
         
         descriptions = {
             '07:00': f"""Start your day right! This morning motivation will help you focus on building success habits, not scrolling mindlessly!
@@ -211,10 +289,31 @@ class YouTubeScheduler:
 {base_hashtags}""")
     
     def generate_and_upload_video(self, upload_time):
-        """Generate a video and upload it to YouTube"""
-        logging.info(f"🎬 VIDEO DEBUG: ===== VIDEO GENERATION STARTED =====")
-        logging.info(f"🎬 VIDEO DEBUG: Upload time slot: {upload_time}")
-        logging.info(f"🎬 VIDEO DEBUG: Current IST time: {self.get_current_ist_time().strftime('%Y-%m-%d %H:%M:%S')}")
+        """Generate a video and upload it to YouTube with duplicate prevention"""
+        
+        # Check if upload already completed today for this time slot
+        if self._is_upload_completed_today(upload_time):
+            logging.info(f"SKIP: Upload for {upload_time} already completed today")
+            return
+        
+        # Acquire lock to prevent concurrent uploads
+        if not self.upload_lock.acquire(blocking=False):
+            logging.warning(f"LOCKED: Another upload is in progress, skipping {upload_time}")
+            return
+        
+        try:
+            logging.info(f"STARTING: Video generation and upload for {upload_time}")
+            self._perform_upload(upload_time)
+        finally:
+            # Always release the lock
+            self.upload_lock.release()
+            logging.info(f"RELEASED: Upload lock for {upload_time}")
+    
+    def _perform_upload(self, upload_time):
+        """Perform the actual upload (called within lock)"""
+        logging.info(f"VIDEO DEBUG: ===== VIDEO GENERATION STARTED =====")
+        logging.info(f"VIDEO DEBUG: Upload time slot: {upload_time}")
+        logging.info(f"VIDEO DEBUG: Current IST time: {self.get_current_ist_time().strftime('%Y-%m-%d %H:%M:%S')}")
         
         video_data = {
             'timestamp': self.get_current_ist_time().strftime('%Y-%m-%d %H:%M:%S IST'),
@@ -232,15 +331,15 @@ class YouTubeScheduler:
         }
         
         try:
-            logging.info(f"🎬 VIDEO DEBUG: Starting video generation and upload for {upload_time} IST")
+            logging.info(f"VIDEO DEBUG: Starting video generation and upload for {upload_time} IST")
             
             # Generate video
-            logging.info("🎬 VIDEO DEBUG: Calling generate_video() function...")
+            logging.info("VIDEO DEBUG: Calling generate_video() function...")
             try:
                 generate_video()
-                logging.info("🎬 VIDEO DEBUG: ✅ Video generation completed successfully!")
+                logging.info("VIDEO DEBUG: Video generation completed successfully!")
             except Exception as e:
-                logging.error(f"🎬 VIDEO DEBUG: ❌ Video generation failed: {e}")
+                logging.error(f"VIDEO DEBUG: Video generation failed: {e}")
                 raise
             
             # Find the most recent video file
@@ -286,7 +385,7 @@ class YouTubeScheduler:
                 file_path=latest_video,
                 title=title,
                 description=description,
-                tags=["BlockScroll", "Motivation", "Productivity", "Digital Detox", "Self Improvement", "Focus", "Success", "Mindfulness", "Break The Scroll", "shorts", "trending", "viral", "business", "creator", "youtuber", "youtubeshorts"]
+                tags=["Breathe-In", "Motivation", "Productivity", "Digital Detox", "Self Improvement", "Focus", "Success", "Mindfulness", "Break The Scroll", "shorts", "trending", "viral", "business", "creator", "youtuber", "youtubeshorts"]
             )
             
             # Update video data with successful upload info
@@ -305,6 +404,9 @@ class YouTubeScheduler:
                 logging.info(f"SUCCESS: Comment posted with ID: {comment_id}")
             else:
                 logging.warning("WARNING: Failed to post comment, but upload was successful")
+            
+            # Mark upload as completed to prevent duplicates
+            self._mark_upload_completed(upload_time)
             
             # Delete the video file after successful upload
             try:
@@ -328,8 +430,8 @@ class YouTubeScheduler:
     
     def schedule_uploads(self):
         """Schedule video uploads at specified times"""
-        logging.info("🔧 SCHEDULER DEBUG: Setting up scheduled uploads...")
-        logging.info(f"🔧 SCHEDULER DEBUG: Upload times configured: {self.upload_times}")
+        logging.info("SCHEDULER DEBUG: Setting up scheduled uploads...")
+        logging.info(f"SCHEDULER DEBUG: Upload times configured: {self.upload_times}")
         
         # Clear any existing jobs
         schedule.clear()
@@ -340,25 +442,25 @@ class YouTubeScheduler:
                 self.generate_and_upload_video, 
                 upload_time=upload_time
             )
-            logging.info(f"✅ SCHEDULER DEBUG: Scheduled upload at {upload_time} IST daily")
+            logging.info(f"SCHEDULER DEBUG: Scheduled upload at {upload_time} IST daily")
         
         # Log all scheduled jobs
-        logging.info(f"🔧 SCHEDULER DEBUG: Total scheduled jobs: {len(schedule.jobs)}")
+        logging.info(f"SCHEDULER DEBUG: Total scheduled jobs: {len(schedule.jobs)}")
         for i, job in enumerate(schedule.jobs):
-            logging.info(f"🔧 SCHEDULER DEBUG: Job {i+1}: {job}")
+            logging.info(f"SCHEDULER DEBUG: Job {i+1}: {job}")
             
-        # Also schedule a more frequent check for immediate execution
-        schedule.every(1).minutes.do(self._check_immediate_schedules)
+        # Note: Removed immediate check system to prevent duplicate uploads
+        # Only using regular daily schedule jobs now
     
     def run_scheduler(self):
         """Run the scheduler in a separate thread"""
         self.is_running = True
-        logging.info("🚀 SCHEDULER DEBUG: YouTube Scheduler started")
-        logging.info(f"🕐 SCHEDULER DEBUG: Current IST time: {self.get_current_ist_time().strftime('%Y-%m-%d %H:%M:%S')}")
+        logging.info("SCHEDULER DEBUG: YouTube Scheduler started")
+        logging.info(f"SCHEDULER DEBUG: Current IST time: {self.get_current_ist_time().strftime('%Y-%m-%d %H:%M:%S')}")
         
         # Log next upload times
         next_upload = self.get_next_upload_time()
-        logging.info(f"⏰ SCHEDULER DEBUG: Next upload scheduled for: {next_upload.strftime('%Y-%m-%d %H:%M:%S IST')}")
+        logging.info(f"SCHEDULER DEBUG: Next upload scheduled for: {next_upload.strftime('%Y-%m-%d %H:%M:%S IST')}")
         
         # Check if we missed any scheduled times today
         self._check_missed_schedules()
@@ -370,34 +472,34 @@ class YouTubeScheduler:
             
             # Log every 4th check (every minute) to avoid spam
             if check_count % 4 == 0:
-                logging.info(f"🔍 SCHEDULER DEBUG: Check #{check_count} - Current time: {current_time.strftime('%H:%M:%S IST')}")
-                logging.info(f"🔍 SCHEDULER DEBUG: Pending jobs: {len(schedule.jobs)}")
+                logging.info(f"SCHEDULER DEBUG: Check #{check_count} - Current time: {current_time.strftime('%H:%M:%S IST')}")
+                logging.info(f"SCHEDULER DEBUG: Pending jobs: {len(schedule.jobs)}")
                 
                 # Check if any jobs should run now
                 for i, job in enumerate(schedule.jobs):
                     if job.should_run:
-                        logging.info(f"🚨 SCHEDULER DEBUG: Job {i+1} should run NOW! {job}")
+                        logging.info(f"SCHEDULER DEBUG: Job {i+1} should run NOW! {job}")
                     else:
                         next_run = job.next_run
                         if next_run:
-                            logging.info(f"⏳ SCHEDULER DEBUG: Job {i+1} next run: {next_run.strftime('%H:%M:%S IST')}")
+                            logging.info(f"SCHEDULER DEBUG: Job {i+1} next run: {next_run.strftime('%H:%M:%S IST')}")
             
             # Run pending jobs
             try:
                 schedule.run_pending()
             except Exception as e:
-                logging.error(f"❌ SCHEDULER DEBUG: Error running pending jobs: {e}")
+                logging.error(f"SCHEDULER DEBUG: Error running pending jobs: {e}")
             
             time.sleep(5)  # Check every 5 seconds for more responsive scheduling
         
-        logging.info("🛑 SCHEDULER DEBUG: YouTube Scheduler stopped")
+        logging.info("SCHEDULER DEBUG: YouTube Scheduler stopped")
     
     def _check_missed_schedules(self):
         """Check if we missed any scheduled uploads today and run them"""
         current_time = self.get_current_ist_time()
         current_time_str = current_time.strftime('%H:%M')
         
-        logging.info(f"🔍 SCHEDULER DEBUG: Checking for missed schedules at {current_time_str}")
+        logging.info(f"SCHEDULER DEBUG: Checking for missed schedules at {current_time_str}")
         
         # Check each upload time to see if we missed it
         for upload_time in self.upload_times:
@@ -412,41 +514,21 @@ class YouTubeScheduler:
             
             # If we're past the upload time but within 30 minutes, run it
             if upload_minutes < current_minutes <= upload_minutes + 30:
-                logging.info(f"🚨 SCHEDULER DEBUG: Missed schedule detected for {upload_time}!")
-                logging.info(f"🚨 SCHEDULER DEBUG: Running missed upload for {upload_time}")
+                logging.info(f"SCHEDULER DEBUG: Missed schedule detected for {upload_time}!")
+                logging.info(f"SCHEDULER DEBUG: Running missed upload for {upload_time}")
                 
                 try:
                     # Run the missed upload
                     self.generate_and_upload_video(upload_time)
-                    logging.info(f"✅ SCHEDULER DEBUG: Successfully completed missed upload for {upload_time}")
+                    logging.info(f"SCHEDULER DEBUG: Successfully completed missed upload for {upload_time}")
                 except Exception as e:
-                    logging.error(f"❌ SCHEDULER DEBUG: Failed to run missed upload for {upload_time}: {e}")
+                    logging.error(f"SCHEDULER DEBUG: Failed to run missed upload for {upload_time}: {e}")
             elif upload_minutes < current_minutes:
-                logging.info(f"⏰ SCHEDULER DEBUG: Upload time {upload_time} already passed (more than 30 min ago)")
+                logging.info(f"SCHEDULER DEBUG: Upload time {upload_time} already passed (more than 30 min ago)")
             else:
-                logging.info(f"⏰ SCHEDULER DEBUG: Upload time {upload_time} is in the future")
+                logging.info(f"SCHEDULER DEBUG: Upload time {upload_time} is in the future")
     
-    def _check_immediate_schedules(self):
-        """Check if we should run any uploads right now (called every minute)"""
-        current_time = self.get_current_ist_time()
-        current_time_str = current_time.strftime('%H:%M')
-        
-        # Check if current time matches any upload time (within 1 minute tolerance)
-        for upload_time in self.upload_times:
-            upload_hour, upload_minute = map(int, upload_time.split(':'))
-            
-            # Check if we're within 1 minute of the scheduled time
-            time_diff = abs((current_time.hour * 60 + current_time.minute) - (upload_hour * 60 + upload_minute))
-            
-            if time_diff <= 1:  # Within 1 minute
-                logging.info(f"🚨 IMMEDIATE SCHEDULE: Current time {current_time_str} matches upload time {upload_time}")
-                logging.info(f"🚨 IMMEDIATE SCHEDULE: Running upload for {upload_time}")
-                
-                try:
-                    self.generate_and_upload_video(upload_time)
-                    logging.info(f"✅ IMMEDIATE SCHEDULE: Successfully completed upload for {upload_time}")
-                except Exception as e:
-                    logging.error(f"❌ IMMEDIATE SCHEDULE: Failed to run upload for {upload_time}: {e}")
+    # Removed _check_immediate_schedules method to prevent duplicate uploads
     
     def start(self):
         """Start the scheduler"""
@@ -501,16 +583,16 @@ class YouTubeScheduler:
     
     def test_trigger_now(self):
         """Test function to manually trigger video generation (for debugging)"""
-        logging.info("🧪 TEST DEBUG: Manual trigger test started")
+        logging.info("TEST DEBUG: Manual trigger test started")
         current_time = self.get_current_ist_time().strftime('%H:%M')
-        logging.info(f"🧪 TEST DEBUG: Triggering video generation for time slot: {current_time}")
+        logging.info(f"TEST DEBUG: Triggering video generation for time slot: {current_time}")
         
         try:
             self.generate_and_upload_video(current_time)
-            logging.info("🧪 TEST DEBUG: ✅ Manual trigger test completed successfully!")
+            logging.info("TEST DEBUG: Manual trigger test completed successfully!")
             return True
         except Exception as e:
-            logging.error(f"🧪 TEST DEBUG: ❌ Manual trigger test failed: {e}")
+            logging.error(f"TEST DEBUG: Manual trigger test failed: {e}")
             return False
 
 # Global scheduler instance

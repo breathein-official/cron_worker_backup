@@ -22,18 +22,17 @@ CAMERA_PATH = "icons/camera.png"
 LOGO_PATH = "icons/cronWorker.png"
 
 def ai_function():
-    """Generate a short BlockScroll-style motivational notification about scrolling."""
+    """Generate a short BreatheIn-style motivational notification about scrolling."""
     prompt = (
-        "Write a single short push-notification text mocking endless scrolling. "
-        "Style: achievement unlocked / streak / gaming reward tone. "
-        "It should highlight wasted hours scrolling with a clever, realistic twist "
-        "about regret, lost time, or missed success. But motivating and realistic do not say you could have written a novel and all "
-        "Examples: 'Elon Musk made millions while you scrolled 2h — unlocked: regret!'. "
-        "Keep it under 100 characters. "
-        "Do not use any emojis in the output. "
-        "Do not explain, list, or say 'here are options'. "
-        "Output only one notification text, nothing else."
-    )
+    "Write a single short push-notification text for a healthy mindset app called Breathe-In. "
+    "Style: motivational streak / power-up / inner strength tone, inspired by anime breathing techniques. "
+    "It should feel like unlocking calm, focus, or resilience through mindful breathing. "
+    "Relatable to Demon Slayer fans but universal, not mentioning the anime directly. "
+    "Keep it under 100 characters. "
+    "Do not use any emojis in the output. "
+    "Do not explain, list, or say 'here are options'. "
+    "Output only one notification text, nothing else."
+)
     
     # Fallback text if AI fails
     fallback_text = "2 hours lost scrolling. Elon Musk made millions. You unlocked: regret."
@@ -201,11 +200,6 @@ def create_lockscreen_frame(bg_path, notif_msg):
         # Load background
         background = Image.open(bg_path).convert("RGB")
 
-        # Grayscale conversion with enhancement
-        gray = cv2.cvtColor(np.array(background), cv2.COLOR_RGB2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        background = Image.fromarray(clahe.apply(gray)).convert("RGB")
-
         # POV text options - randomly select one
         pov_texts = [
             "POV: A notification changes your entire life trajectory",
@@ -325,21 +319,29 @@ def create_lockscreen_frame(bg_path, notif_msg):
         text_block_bottom = max(title_bottom, message_bottom)
         text_block_center_y = (text_block_top + text_block_bottom) // 2
 
-        # Add logo aligned to the vertical center of the text block
+        # Add logo aligned with the app name
         if os.path.exists(LOGO_PATH):
             logo = process_logo()
             logo_height = 100
-            logo_y = int(text_block_center_y - (logo_height // 2))
+            logo_width = 100
+            # Align logo vertically with the app name - add padding to center it properly
+            app_name_y = 40
+            app_name_height = app_name_font.getbbox("A")[3] - app_name_font.getbbox("A")[1]
+            # Center the logo with the app name text, accounting for proper padding
+            logo_y = app_name_y + (app_name_height - logo_height) // 2
+            # Add some padding to push it down a bit more
+            logo_y += 10
             # Clamp within notification box just in case
             logo_y = max(0, min(NOTIF_HEIGHT - logo_height, logo_y))
             notif_box.paste(logo, (40, logo_y), logo)
 
         # Notification text elements
         title_weight = 1.5  # Set >0 to increase boldness (e.g., 1 or 2)
+        # Position app name to align with logo (logo at x=40, width=100, so text starts at x=160)
         draw_bold_text(
             notif_draw,
             (160, 40),
-            "BlockScroll",
+            "Breathe-In",
             app_name_font,
             "white",
             weight=title_weight,
