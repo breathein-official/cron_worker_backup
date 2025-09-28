@@ -4,16 +4,22 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from moviepy import ImageClip, AudioFileClip, CompositeVideoClip, concatenate_audioclips
-from meta_ai_api import MetaAI
 import textwrap
+import openai
+from dotenv import load_dotenv
+from token_tracker import track_usage
 
-ai = MetaAI()
+# Load environment variables
+load_dotenv()
+
+# Initialize OpenAI client
+openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 # Configuration
 IMAGE_SIZE = (1080, 1920)
 TORCH_PATH = "icons/torch.png"
 CAMERA_PATH = "icons/camera.png"
-LOGO_PATH = "icons/blockscroll.png"
+LOGO_PATH = "icons/cronWorker.png"
 
 def ai_function():
     """Generate a short BlockScroll-style motivational notification about scrolling."""
@@ -33,33 +39,43 @@ def ai_function():
     fallback_text = "2 hours lost scrolling. Elon Musk made millions. You unlocked: regret."
     
     try:
-        response_dict = ai.prompt(message=prompt)
+        response = openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=100,
+            temperature=0.7
+        )
+        
+        # Track token usage
+        track_usage(response.usage, "Notification Generation", "gpt-3.5-turbo")
         
         # Extract the message safely
-        response = response_dict.get("message", "").strip()
+        response_text = response.choices[0].message.content.strip()
         
         # Remove filler like "Here are some options:" if it appears
-        if response.lower().startswith("here are"):
-            response = response.split(":", 1)[-1].strip()
+        if response_text.lower().startswith("here are"):
+            response_text = response_text.split(":", 1)[-1].strip()
         
         # If multiple lines or options come back, take just the first
-        if "\n" in response:
-            response = response.split("\n")[0].strip()
+        if "\n" in response_text:
+            response_text = response_text.split("\n")[0].strip()
         
         # Remove quotes if they wrap the entire response
-        if response.startswith('"') and response.endswith('"'):
-            response = response[1:-1]
+        if response_text.startswith('"') and response_text.endswith('"'):
+            response_text = response_text[1:-1]
         
         # Remove any emojis that might have slipped through
         import re
-        response = re.sub(r'[^\w\s\.,!?\-:;()]', '', response)
+        response_text = re.sub(r'[^\w\s\.,!?\-:;()]', '', response_text)
         
         # If response is empty or too short, use fallback
-        if not response or len(response) < 10:
-            response = fallback_text
+        if not response_text or len(response_text) < 10:
+            response_text = fallback_text
             
-        print(f"Generated notification: {response}")
-        return response
+        print(f"Generated notification: {response_text}")
+        return response_text
         
     except Exception as e:
         print(f"AI generation failed: {e}, using fallback")

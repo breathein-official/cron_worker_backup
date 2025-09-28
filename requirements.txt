@@ -13,9 +13,9 @@ google-auth
 schedule
 pytz
 
-# AI integration (if using Meta AI)
-# Add your Meta AI API package here
-# meta-ai-api  # Uncomment if you have this package
+# AI integration with OpenAI
+openai>=1.0.0
+python-dotenv>=1.0.0
 
 # Logging and utilities
 python-dateutil

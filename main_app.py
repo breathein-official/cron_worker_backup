@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-BlockScroll YouTube Auto-Uploader
-Main application that generates videos and uploads them to YouTube on schedule
+cronWorker
 """
 
 import os
@@ -12,7 +11,7 @@ import logging
 import csv
 from datetime import datetime
 import pytz
-from youtube_scheduler import start_youtube_scheduler, stop_youtube_scheduler, get_scheduler_status, scheduler
+from scheduler import start_youtube_scheduler, stop_youtube_scheduler, get_scheduler_status, scheduler
 from app import generate_video, batch_generate_videos
 
 # Configure logging
@@ -20,12 +19,12 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('blockscroll_app.log'),
+        logging.FileHandler('cronWorker_app.log'),
         logging.StreamHandler()
     ]
 )
 
-class BlockScrollApp:
+class cronWorkerApp:
     def __init__(self):
         self.is_running = False
         self.ist = pytz.timezone('Asia/Kolkata')
@@ -34,8 +33,8 @@ class BlockScrollApp:
         """Check if all required files and directories exist"""
         required_files = [
             'client_secret.json',
-            'youtube_uploader.py',
-            'youtube_scheduler.py',
+            'exit.py',
+            'scheduler.py',
             'app.py'
         ]
         
@@ -78,9 +77,9 @@ class BlockScrollApp:
         signal.signal(signal.SIGTERM, signal_handler)
     
     def start(self):
-        """Start the BlockScroll application"""
+        """Start the cronWorker application"""
         logging.info("=" * 50)
-        logging.info("BlockScroll YouTube Auto-Uploader Starting...")
+        logging.info("cronWorker Starting...")
         logging.info("=" * 50)
         
         # Check requirements
@@ -99,11 +98,11 @@ class BlockScrollApp:
         next_upload = scheduler.get_next_upload_time()
         logging.info(f"Next upload scheduled: {next_upload.strftime('%Y-%m-%d %H:%M:%S IST')}")
         
-        # Start YouTube scheduler
+        # Start scheduler
         try:
             start_youtube_scheduler()
             self.is_running = True
-            logging.info("SUCCESS: BlockScroll app started successfully!")
+            logging.info("SUCCESS: cronWorker app started successfully!")
             logging.info("SCHEDULE: Uploads at 7:30 AM, 12:00 PM, 7:00 PM IST")
             logging.info("STATUS: App will run continuously. Press Ctrl+C to stop.")
             return True
@@ -112,14 +111,14 @@ class BlockScrollApp:
             return False
     
     def stop(self):
-        """Stop the BlockScroll application"""
+        """Stop the cronWorker application"""
         if not self.is_running:
             return
         
-        logging.info("Stopping BlockScroll app...")
+        logging.info("Stopping cronWorker app...")
         stop_youtube_scheduler()
         self.is_running = False
-        logging.info("SUCCESS: BlockScroll app stopped successfully!")
+        logging.info("SUCCESS: cronWorker app stopped successfully!")
     
     def run(self):
         """Run the application continuously"""
@@ -127,9 +126,10 @@ class BlockScrollApp:
             return
         
         try:
-            # Main loop - show status every hour
+            # Main loop - show status every 10 seconds
             while self.is_running:
-                time.sleep(3600)  # Sleep for 1 hour
+                print("App is running... Press Ctrl+C to stop.")
+                time.sleep(10)  # Sleep for 10 seconds
                 if self.is_running:
                     logging.info(f"Status: {get_scheduler_status()}")
         except KeyboardInterrupt:
@@ -168,21 +168,21 @@ class BlockScrollApp:
         latest_video = os.path.join(output_dir, video_files[0])
         
         try:
-            from youtube_uploader import upload_video
+            from exit import upload_video
             # Generate test title using the same format
             test_title = "Success Habits!\nBe the one ✅"
             
             video_id = upload_video(
                 file_path=latest_video,
                 title=test_title,
-                description="Test upload from BlockScroll app",
-                tags=["test", "blockscroll", "shorts", "trending", "viral", "business", "creator", "youtuber", "youtubeshorts"]
+                description="Test upload from cronWorker app",
+                tags=["test", "cronWorker", "shorts", "trending", "viral", "business", "creator", "youtuber", "youtubeshorts"]
             )
             logging.info(f"SUCCESS: YouTube upload test successful! Video ID: {video_id}")
             
             # Post test comment
             try:
-                from youtube_uploader import get_youtube_service
+                from exit import get_youtube_service
                 youtube = get_youtube_service()
                 comment_request = youtube.commentThreads().insert(
                     part="snippet",
@@ -216,7 +216,7 @@ class BlockScrollApp:
     
     def view_upload_log(self, limit=10):
         """View recent upload log entries from CSV"""
-        csv_file = 'video_upload_log.csv'
+        csv_file = 'exitLog.csv'
         if not os.path.exists(csv_file):
             logging.info("No upload log found. Run some uploads first.")
             return
@@ -251,7 +251,7 @@ class BlockScrollApp:
     
     def get_upload_stats(self):
         """Get upload statistics from CSV log"""
-        csv_file = 'video_upload_log.csv'
+        csv_file = 'exitLog.csv'
         if not os.path.exists(csv_file):
             return {"total": 0, "successful": 0, "failed": 0, "success_rate": 0}
         
@@ -277,7 +277,7 @@ class BlockScrollApp:
 
 def main():
     """Main function with command line options"""
-    app = BlockScrollApp()
+    app = cronWorkerApp()
     
     if len(sys.argv) > 1:
         command = sys.argv[1].lower()
@@ -293,6 +293,14 @@ def main():
             video_ok = app.test_video_generation()
             if video_ok:
                 app.test_youtube_upload()
+        elif command == "test-scheduler":
+            logging.info("Testing scheduler trigger...")
+            from scheduler import scheduler
+            success = scheduler.test_trigger_now()
+            if success:
+                logging.info("✅ Scheduler test completed successfully!")
+            else:
+                logging.error("❌ Scheduler test failed!")
         elif command == "status":
             if app.is_running:
                 print(get_scheduler_status())
@@ -310,20 +318,21 @@ def main():
             print(f"Success rate: {stats['success_rate']}%")
         elif command == "help":
             print("""
-BlockScroll YouTube Auto-Uploader Commands:
+cronWorker YouTube Auto-Uploader Commands:
 
   python main_app.py start        - Start the app with scheduled uploads
   python main_app.py test-video   - Test video generation only
   python main_app.py test-upload  - Test YouTube upload with existing video
   python main_app.py test-all     - Run both video and upload tests
+  python main_app.py test-scheduler - Test scheduler trigger manually
   python main_app.py status       - Show current status
   python main_app.py log [N]      - View recent upload log (default: 10 entries)
   python main_app.py stats        - Show upload statistics
   python main_app.py help         - Show this help message
 
-Scheduled uploads: 7:30 AM, 12:00 PM, 7:00 PM IST
+Scheduled uploads: 11:18 AM, 12:00 PM, 7:00 PM IST
 Videos are automatically deleted after successful upload.
-All upload details are logged to video_upload_log.csv
+All upload details are logged to exitLog.csv
             """)
         else:
             print(f"Unknown command: {command}")

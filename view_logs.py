@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-BlockScroll Upload Log Viewer
+cronWorker Upload Log Viewer
 Simple script to view and analyze upload logs
 """
 
@@ -11,7 +11,7 @@ import os
 
 def view_logs(limit=20, show_all=False):
     """View upload logs with various options"""
-    csv_file = 'video_upload_log.csv'
+    csv_file = 'exitLog.csv'
     
     if not os.path.exists(csv_file):
         print("ERROR: No upload log found. Run some uploads first.")
@@ -31,7 +31,7 @@ def view_logs(limit=20, show_all=False):
         else:
             display_rows = rows[-limit:] if len(rows) > limit else rows
         
-        print(f"\nLOG: BlockScroll Upload Log")
+        print(f"\nLOG: cronWorker Upload Log")
         print("=" * 100)
         print(f"Showing {len(display_rows)} of {len(rows)} total entries")
         print("=" * 100)
@@ -58,7 +58,7 @@ def view_logs(limit=20, show_all=False):
 
 def show_stats():
     """Show upload statistics"""
-    csv_file = 'video_upload_log.csv'
+    csv_file = 'exitLog.csv'
     
     if not os.path.exists(csv_file):
         print("ERROR: No upload log found.")
@@ -113,7 +113,7 @@ def show_stats():
 
 def export_logs():
     """Export logs to a formatted text file"""
-    csv_file = 'video_upload_log.csv'
+    csv_file = 'exitLog.csv'
     export_file = f'upload_log_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt'
     
     if not os.path.exists(csv_file):
@@ -126,7 +126,7 @@ def export_logs():
             rows = list(reader)
         
         with open(export_file, 'w', encoding='utf-8') as outfile:
-            outfile.write("BlockScroll Upload Log Export\n")
+            outfile.write("cronWorker Upload Log Export\n")
             outfile.write("=" * 50 + "\n")
             outfile.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             outfile.write(f"Total entries: {len(rows)}\n\n")
@@ -151,7 +151,7 @@ def main():
     """Main function"""
     if len(sys.argv) < 2:
         print("""
-BlockScroll Log Viewer
+cronWorker Log Viewer
 
 Usage:
   python view_logs.py view [N]     - View recent N entries (default: 20)
@@ -175,7 +175,7 @@ Usage:
         export_logs()
     elif command == "help":
         print("""
-BlockScroll Log Viewer
+cronWorker Log Viewer
 
 This tool helps you view and analyze your video upload logs.
 

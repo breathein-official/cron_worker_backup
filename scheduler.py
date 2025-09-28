@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 import pytz
 import csv
 import hashlib
-from youtube_uploader import upload_video
+from exit import upload_video
 from app import generate_video
 import logging
 
@@ -15,7 +15,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('youtube_scheduler.log'),
+        logging.FileHandler('event.log'),
         logging.StreamHandler()
     ]
 )
@@ -26,7 +26,7 @@ class YouTubeScheduler:
         self.upload_times = ['07:30', '12:00', '19:00']  # 7:30 AM, 12 PM, 7:00 PM IST
         self.is_running = False
         self.scheduler_thread = None
-        self.csv_log_file = 'video_upload_log.csv'
+        self.csv_log_file = 'exitLog.csv'
         self._initialize_csv_log()
         
     def _initialize_csv_log(self):
@@ -67,7 +67,7 @@ class YouTubeScheduler:
     def _post_comment(self, video_id):
         """Post a comment on the uploaded video"""
         try:
-            from youtube_uploader import get_youtube_service
+            from exit import get_youtube_service
             
             youtube = get_youtube_service()
             
@@ -116,69 +116,75 @@ class YouTubeScheduler:
         return datetime.now(self.ist)
     
     def create_video_title(self, upload_time):
-        """Generate dynamic video title using Meta AI"""
+        """Generate dynamic video title using OpenAI"""
+        import os
+        import random
+        import openai
+        from dotenv import load_dotenv
+        from token_tracker import track_usage
+        
+        # Load environment variables
+        load_dotenv()
+        
+        # Initialize OpenAI client
+        openai_client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        
+        # Generate motivational phrases for the title
+        prompt = (
+            "Generate two short motivational phrases for a YouTube Shorts title. "
+            "Format: First line should be about success habits or achievement, "
+            "second line should be 'Be the one [action]' or 'Achieve [goal]'. "
+            "Keep each line under 20 characters. "
+            "Examples: 'Success Habits!' and 'Be the one ✅' or 'Achieve ✅'. "
+            "Output only the two lines separated by a newline, nothing else."
+        )
+        
+        # Fallback titles if AI fails
+        fallback_titles = [
+            ("Success Habits!", "Be the one ✅"),
+            ("Achieve More!", "Be the one ✅"),
+            ("Win Today!", "Achieve ✅"),
+            ("Success Mindset!", "Be the one ✅"),
+            ("Level Up!", "Achieve ✅")
+        ]
+        
         try:
-            from meta_ai_api import MetaAI
-            ai = MetaAI()
-            
-            # Generate motivational phrases for the title
-            prompt = (
-                "Generate two short motivational phrases for a YouTube Shorts title. "
-                "Format: First line should be about success habits or achievement, "
-                "second line should be 'Be the one [action]' or 'Achieve [goal]'. "
-                "Keep each line under 20 characters. "
-                "Examples: 'Success Habits!' and 'Be the one ✅' or 'Achieve ✅'. "
-                "Output only the two lines separated by a newline, nothing else."
+            response = openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=100,
+                temperature=0.7
             )
             
-            # Fallback titles if AI fails
-            fallback_titles = [
-                ("Success Habits!", "Be the one ✅"),
-                ("Achieve More!", "Be the one ✅"),
-                ("Win Today!", "Achieve ✅"),
-                ("Success Mindset!", "Be the one ✅"),
-                ("Level Up!", "Achieve ✅")
-            ]
+            # Track token usage
+            track_usage(response.usage, "Title Generation", "gpt-3.5-turbo")
             
-            try:
-                response_dict = ai.prompt(message=prompt)
-                response = response_dict.get("message", "").strip()
-                
-                # Parse the response
-                if "\n" in response:
-                    lines = response.split("\n")
-                    if len(lines) >= 2:
-                        line1 = lines[0].strip()
-                        line2 = lines[1].strip()
-                        
-                        # Clean up the lines
-                        line1 = line1.replace('"', '').replace("'", "")
-                        line2 = line2.replace('"', '').replace("'", "")
-                        
-                        if len(line1) > 0 and len(line2) > 0:
-                            return f"{line1}\n{line2}"
-                
-                # If parsing failed, use fallback
-                import random
-                fallback = random.choice(fallback_titles)
-                return f"{fallback[0]}\n{fallback[1]}"
-                
-            except Exception as e:
-                logging.warning(f"AI title generation failed: {e}, using fallback")
-                import random
-                fallback = random.choice(fallback_titles)
-                return f"{fallback[0]}\n{fallback[1]}"
-                
-        except Exception as e:
-            logging.warning(f"Meta AI not available: {e}, using fallback")
+            response_text = response.choices[0].message.content.strip()
+            
+            # Parse the response
+            if "\n" in response_text:
+                lines = response_text.split("\n")
+                if len(lines) >= 2:
+                    line1 = lines[0].strip()
+                    line2 = lines[1].strip()
+                    
+                    # Clean up the lines
+                    line1 = line1.replace('"', '').replace("'", "")
+                    line2 = line2.replace('"', '').replace("'", "")
+                    
+                    if len(line1) > 0 and len(line2) > 0:
+                        return f"{line1}\n{line2}"
+            
+            # If parsing failed, use fallback
             import random
-            fallback_titles = [
-                ("Success Habits!", "Be the one ✅"),
-                ("Achieve More!", "Be the one ✅"),
-                ("Win Today!", "Achieve ✅"),
-                ("Success Mindset!", "Be the one ✅"),
-                ("Level Up!", "Achieve ✅")
-            ]
+            fallback = random.choice(fallback_titles)
+            return f"{fallback[0]}\n{fallback[1]}"
+            
+        except Exception as e:
+            logging.warning(f"OpenAI title generation failed: {e}, using fallback")
+            import random
             fallback = random.choice(fallback_titles)
             return f"{fallback[0]}\n{fallback[1]}"
     
@@ -187,7 +193,7 @@ class YouTubeScheduler:
         base_hashtags = "#BlockScroll #Productivity #DigitalDetox #Motivation #SelfImprovement #Focus #Success #Mindfulness #BreakTheScroll #shorts #trending #viral #business #creator #youtuber #youtubeshorts"
         
         descriptions = {
-            '07:30': f"""Start your day right! This morning motivation will help you focus on building success habits, not scrolling mindlessly!
+            '07:00': f"""Start your day right! This morning motivation will help you focus on building success habits, not scrolling mindlessly!
 
 {base_hashtags} #MorningMotivation""",
             
@@ -206,6 +212,10 @@ class YouTubeScheduler:
     
     def generate_and_upload_video(self, upload_time):
         """Generate a video and upload it to YouTube"""
+        logging.info(f"🎬 VIDEO DEBUG: ===== VIDEO GENERATION STARTED =====")
+        logging.info(f"🎬 VIDEO DEBUG: Upload time slot: {upload_time}")
+        logging.info(f"🎬 VIDEO DEBUG: Current IST time: {self.get_current_ist_time().strftime('%Y-%m-%d %H:%M:%S')}")
+        
         video_data = {
             'timestamp': self.get_current_ist_time().strftime('%Y-%m-%d %H:%M:%S IST'),
             'upload_time_slot': upload_time,
@@ -222,11 +232,16 @@ class YouTubeScheduler:
         }
         
         try:
-            logging.info(f"Starting video generation and upload for {upload_time} IST")
+            logging.info(f"🎬 VIDEO DEBUG: Starting video generation and upload for {upload_time} IST")
             
             # Generate video
-            logging.info("Generating video...")
-            generate_video()
+            logging.info("🎬 VIDEO DEBUG: Calling generate_video() function...")
+            try:
+                generate_video()
+                logging.info("🎬 VIDEO DEBUG: ✅ Video generation completed successfully!")
+            except Exception as e:
+                logging.error(f"🎬 VIDEO DEBUG: ❌ Video generation failed: {e}")
+                raise
             
             # Find the most recent video file
             output_dir = "outputVideos"
@@ -313,24 +328,125 @@ class YouTubeScheduler:
     
     def schedule_uploads(self):
         """Schedule video uploads at specified times"""
+        logging.info("🔧 SCHEDULER DEBUG: Setting up scheduled uploads...")
+        logging.info(f"🔧 SCHEDULER DEBUG: Upload times configured: {self.upload_times}")
+        
+        # Clear any existing jobs
+        schedule.clear()
+        
         for upload_time in self.upload_times:
+            # Schedule with explicit timezone handling
             schedule.every().day.at(upload_time).do(
                 self.generate_and_upload_video, 
                 upload_time=upload_time
             )
-            logging.info(f"Scheduled upload at {upload_time} IST daily")
+            logging.info(f"✅ SCHEDULER DEBUG: Scheduled upload at {upload_time} IST daily")
+        
+        # Log all scheduled jobs
+        logging.info(f"🔧 SCHEDULER DEBUG: Total scheduled jobs: {len(schedule.jobs)}")
+        for i, job in enumerate(schedule.jobs):
+            logging.info(f"🔧 SCHEDULER DEBUG: Job {i+1}: {job}")
+            
+        # Also schedule a more frequent check for immediate execution
+        schedule.every(1).minutes.do(self._check_immediate_schedules)
     
     def run_scheduler(self):
         """Run the scheduler in a separate thread"""
         self.is_running = True
-        logging.info("YouTube Scheduler started")
-        logging.info(f"Current IST time: {self.get_current_ist_time().strftime('%Y-%m-%d %H:%M:%S')}")
+        logging.info("🚀 SCHEDULER DEBUG: YouTube Scheduler started")
+        logging.info(f"🕐 SCHEDULER DEBUG: Current IST time: {self.get_current_ist_time().strftime('%Y-%m-%d %H:%M:%S')}")
         
+        # Log next upload times
+        next_upload = self.get_next_upload_time()
+        logging.info(f"⏰ SCHEDULER DEBUG: Next upload scheduled for: {next_upload.strftime('%Y-%m-%d %H:%M:%S IST')}")
+        
+        # Check if we missed any scheduled times today
+        self._check_missed_schedules()
+        
+        check_count = 0
         while self.is_running:
-            schedule.run_pending()
-            time.sleep(60)  # Check every minute
+            check_count += 1
+            current_time = self.get_current_ist_time()
+            
+            # Log every 4th check (every minute) to avoid spam
+            if check_count % 4 == 0:
+                logging.info(f"🔍 SCHEDULER DEBUG: Check #{check_count} - Current time: {current_time.strftime('%H:%M:%S IST')}")
+                logging.info(f"🔍 SCHEDULER DEBUG: Pending jobs: {len(schedule.jobs)}")
+                
+                # Check if any jobs should run now
+                for i, job in enumerate(schedule.jobs):
+                    if job.should_run:
+                        logging.info(f"🚨 SCHEDULER DEBUG: Job {i+1} should run NOW! {job}")
+                    else:
+                        next_run = job.next_run
+                        if next_run:
+                            logging.info(f"⏳ SCHEDULER DEBUG: Job {i+1} next run: {next_run.strftime('%H:%M:%S IST')}")
+            
+            # Run pending jobs
+            try:
+                schedule.run_pending()
+            except Exception as e:
+                logging.error(f"❌ SCHEDULER DEBUG: Error running pending jobs: {e}")
+            
+            time.sleep(5)  # Check every 5 seconds for more responsive scheduling
         
-        logging.info("YouTube Scheduler stopped")
+        logging.info("🛑 SCHEDULER DEBUG: YouTube Scheduler stopped")
+    
+    def _check_missed_schedules(self):
+        """Check if we missed any scheduled uploads today and run them"""
+        current_time = self.get_current_ist_time()
+        current_time_str = current_time.strftime('%H:%M')
+        
+        logging.info(f"🔍 SCHEDULER DEBUG: Checking for missed schedules at {current_time_str}")
+        
+        # Check each upload time to see if we missed it
+        for upload_time in self.upload_times:
+            # Parse upload time
+            upload_hour, upload_minute = map(int, upload_time.split(':'))
+            current_hour = current_time.hour
+            current_minute = current_time.minute
+            
+            # Check if current time is past the upload time (within 30 minutes)
+            current_minutes = current_hour * 60 + current_minute
+            upload_minutes = upload_hour * 60 + upload_minute
+            
+            # If we're past the upload time but within 30 minutes, run it
+            if upload_minutes < current_minutes <= upload_minutes + 30:
+                logging.info(f"🚨 SCHEDULER DEBUG: Missed schedule detected for {upload_time}!")
+                logging.info(f"🚨 SCHEDULER DEBUG: Running missed upload for {upload_time}")
+                
+                try:
+                    # Run the missed upload
+                    self.generate_and_upload_video(upload_time)
+                    logging.info(f"✅ SCHEDULER DEBUG: Successfully completed missed upload for {upload_time}")
+                except Exception as e:
+                    logging.error(f"❌ SCHEDULER DEBUG: Failed to run missed upload for {upload_time}: {e}")
+            elif upload_minutes < current_minutes:
+                logging.info(f"⏰ SCHEDULER DEBUG: Upload time {upload_time} already passed (more than 30 min ago)")
+            else:
+                logging.info(f"⏰ SCHEDULER DEBUG: Upload time {upload_time} is in the future")
+    
+    def _check_immediate_schedules(self):
+        """Check if we should run any uploads right now (called every minute)"""
+        current_time = self.get_current_ist_time()
+        current_time_str = current_time.strftime('%H:%M')
+        
+        # Check if current time matches any upload time (within 1 minute tolerance)
+        for upload_time in self.upload_times:
+            upload_hour, upload_minute = map(int, upload_time.split(':'))
+            
+            # Check if we're within 1 minute of the scheduled time
+            time_diff = abs((current_time.hour * 60 + current_time.minute) - (upload_hour * 60 + upload_minute))
+            
+            if time_diff <= 1:  # Within 1 minute
+                logging.info(f"🚨 IMMEDIATE SCHEDULE: Current time {current_time_str} matches upload time {upload_time}")
+                logging.info(f"🚨 IMMEDIATE SCHEDULE: Running upload for {upload_time}")
+                
+                try:
+                    self.generate_and_upload_video(upload_time)
+                    logging.info(f"✅ IMMEDIATE SCHEDULE: Successfully completed upload for {upload_time}")
+                except Exception as e:
+                    logging.error(f"❌ IMMEDIATE SCHEDULE: Failed to run upload for {upload_time}: {e}")
     
     def start(self):
         """Start the scheduler"""
@@ -382,6 +498,20 @@ class YouTubeScheduler:
         minutes, _ = divmod(remainder, 60)
         
         return f"Scheduler is running. Next upload in {int(hours)}h {int(minutes)}m at {next_upload.strftime('%H:%M IST')}"
+    
+    def test_trigger_now(self):
+        """Test function to manually trigger video generation (for debugging)"""
+        logging.info("🧪 TEST DEBUG: Manual trigger test started")
+        current_time = self.get_current_ist_time().strftime('%H:%M')
+        logging.info(f"🧪 TEST DEBUG: Triggering video generation for time slot: {current_time}")
+        
+        try:
+            self.generate_and_upload_video(current_time)
+            logging.info("🧪 TEST DEBUG: ✅ Manual trigger test completed successfully!")
+            return True
+        except Exception as e:
+            logging.error(f"🧪 TEST DEBUG: ❌ Manual trigger test failed: {e}")
+            return False
 
 # Global scheduler instance
 scheduler = YouTubeScheduler()
@@ -418,7 +548,7 @@ if __name__ == "__main__":
     try:
         # Keep running
         while True:
-            time.sleep(60)
+            time.sleep(15)
             print(f"\nStatus: {scheduler.status()}")
     except KeyboardInterrupt:
         print("\nStopping scheduler...")

@@ -36,7 +36,7 @@ def upload_video(file_path, title="Test Upload", description="Uploaded via API",
         "snippet": {
             "title": title,
             "description": description,
-            "tags": tags or ["motivation", "blockscroll"],
+            "tags": tags or ["motivation", "cronWorker"],
             "categoryId": categoryId
         },
         "status": {
